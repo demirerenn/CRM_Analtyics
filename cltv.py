@@ -1,8 +1,9 @@
 import datetime as dt
-import numpy as np
 import pandas as pd
 from lifetimes import BetaGeoFitter
 from lifetimes import GammaGammaFitter
+from lifetimes.plotting import plot_period_transactions
+from matplotlib import pyplot as plt
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.float_format', lambda x: '%.3f' % x)
@@ -14,20 +15,20 @@ customers of the company are wholesalers.
 https://www.kaggle.com/datasets/carrie1/ecommerce-data
 """
 
-df_ = pd.read_csv("C:\\Users\erend\PycharmProjects\pythonProject\Exercise\data.csv", encoding="ISO-8859-1")
+df_ = pd.read_excel("Exercise/CLTV/online_retail_II.xlsx", sheet_name="Year 2010-2011")
 df = df_.copy()
 
 # DATA PREPARATION
 """
 Variable Description
 
-InvoiceNo: Invoice number that consists 6 digits. If this code starts with letter 'c', it indicates a cancellation.
+Invoice: Invoice number that consists 6 digits. If this code starts with letter 'c', it indicates a cancellation.
 StockCode: Product code that consists 5 digits.
 Description: Product name.
 Quantity: The quantities of each product per transaction.
 InvoiceDate: Represents the day and time when each transaction was generated.
-UnitPrice: Product price per unit.
-CustomerID: Customer number that consists 5 digits. Each customer has a unique customer ID.
+Price: Product price per unit.
+Customer ID: Customer number that consists 5 digits. Each customer has a unique customer ID.
 Country: Name of the country where each customer resides."""
 
 # top 10 observations
@@ -36,7 +37,7 @@ print(df.head(10))
 # 8 variables, 541909 observations
 print(df.shape)
 
-# columns = 'InvoiceNo', 'StockCode', 'Description', 'Quantity', 'InvoiceDate', 'UnitPrice', 'CustomerID', 'Country'
+# columns
 print(df.columns)
 
 # information about variables
@@ -48,59 +49,63 @@ print(df.describe().T)
 # empty observations in variables
 print(df.isnull().sum())
 
-# Since customer-based work will be done, blank observations belonging to the customer are deleted.
-df.dropna(subset=['CustomerID'], inplace=True)
+# Drop NA's
+df.dropna(axis=0, inplace=True)
 print(df.isnull().sum())
 
-# Purchases made by 4372 unique customers
-print(df.shape)
-print(df["CustomerID"].nunique())
+# delete return orders
+df = df[~df["Invoice"].str.contains("C", na=False)]
+
+# there shouldn't be quantity and price values as zero
+df = df[df["Quantity"] > 0]
+df = df[(df['Price'] > 0)]
+
+# Creating TotalPrice feature
+df["TotalPrice"] = df["Quantity"] * df["Price"]
+
+
+# Define outlier_thresholds and replace_with_thresholds functions needed to suppress outliers
+
+def outlier_thresholds(dataframe, variable):
+    quartile1 = dataframe[variable].quantile(0.01)
+    quartile3 = dataframe[variable].quantile(0.99)
+    interquantile_range = quartile3 - quartile1
+    up_limit = round(quartile3 + 1.5 * interquantile_range)
+    low_limit = round(quartile1 - 1.5 * interquantile_range)
+    return low_limit, up_limit
+
+
+def replace_with_thresholds(dataframe, variable):
+    low_limit, up_limit = outlier_thresholds(dataframe, variable)
+    dataframe.loc[(dataframe[variable] < low_limit), variable] = low_limit
+    dataframe.loc[(dataframe[variable] > up_limit), variable] = up_limit
+
+
+# Replace outliers with threshold (0.99-0.01)
+columns = ["Quantity", "TotalPrice"]
+
+for col in columns:
+    replace_with_thresholds(df, col)
 
 # CUSTOMER ANALYSIS WITH RFM
-
-df = df[(df['UnitPrice'] > 0)]
-df = df[df['Quantity'] > 0]
-
-# delete return orders
-df = df[~df["InvoiceNo"].str.contains("C", na=False)]
-
-# Converting the type of variables that express a date to date
-date_columns = df.columns[df.columns.str.contains("Date")]
-df[date_columns] = df[date_columns].apply(pd.to_datetime)
-print(df.info())
-
-df["TotalPrice"] = df["Quantity"] * df["UnitPrice"]
-print(df.head())
-print(df.describe().T)
 
 # last shopping date
 print(df["InvoiceDate"].max())
 
 analysis_date = dt.datetime(2011, 12, 10)
 
-df2 = df.groupby('CustomerID').agg(pd.Series.tolist)
-df2 = df2.reset_index()
+rfm = df.groupby('Customer ID').agg({'InvoiceDate': lambda date: (date.max() - date.min()).days,
+                                     'Invoice': lambda num: num.nunique(),
+                                     'TotalPrice': lambda TotalPrice: TotalPrice.sum()})
+print(rfm.head())
 
-rfm = pd.DataFrame()
-rfm["CustomerID"] = df2["CustomerID"]
-
-rfm["recency"] = np.NaN
-for i in rfm.index:
-    rfm["recency"][i] = (analysis_date - max(df2["InvoiceDate"][i])).days
-
-rfm["frequency"] = np.NaN
-for i in rfm.index:
-    rfm["frequency"][i] = len(df2["InvoiceNo"][i])
-
-rfm["monetary"] = np.NaN
-for i in rfm.index:
-    rfm["monetary"][i] = sum(df2["TotalPrice"][i])
-
+# rfm.columns = rfm.columns.droplevel(0)
+rfm.columns = ['recency', 'frequency', 'monetary']
+rfm = rfm[(rfm['recency'] > 0)]
 # rfm scoring
 rfm["recency_score"] = pd.qcut(rfm['recency'], 5, labels=[5, 4, 3, 2, 1])
 rfm["frequency_score"] = pd.qcut(rfm['frequency'].rank(method="first"), 5, labels=[1, 2, 3, 4, 5])
 rfm["monetary_score"] = pd.qcut(rfm['monetary'], 5, labels=[1, 2, 3, 4, 5])
-
 rfm["RFM_SCORE"] = (rfm['recency_score'].astype(str) + rfm['frequency_score'].astype(str))
 
 # Customer segmentation with rfm
@@ -140,63 +145,40 @@ def pareto_analysis(dataframe, id_, price_col, percentile=0.8):
 pareto_analysis(rfm, "CustomerID", 'monetary', percentile=0.75)
 pareto_analysis(rfm, "CustomerID", 'monetary')
 
-
 # CLTV
-
-# Define outlier_thresholds and replace_with_thresholds functions needed to suppress outliers
-
-def outlier_thresholds(dataframe, variable):
-    quartile1 = dataframe[variable].quantile(0.01)
-    quartile3 = dataframe[variable].quantile(0.99)
-    interquantile_range = quartile3 - quartile1
-    up_limit = round(quartile3 + 1.5 * interquantile_range)
-    low_limit = round(quartile1 - 1.5 * interquantile_range)
-    return low_limit, up_limit
-
-
-def replace_with_thresholds(dataframe, variable):
-    low_limit, up_limit = outlier_thresholds(dataframe, variable)
-    dataframe.loc[(dataframe[variable] < low_limit), variable] = low_limit
-    dataframe.loc[(dataframe[variable] > up_limit), variable] = up_limit
-
-
-# if there are outliers, suppression
-df.describe().T
-columns = ["Quantity", "TotalPrice"]
-
-for col in columns:
-    replace_with_thresholds(df, col)
-
-df.describe().T
 
 # last shopping date
 print(df["InvoiceDate"].max())
 analysis_date = dt.datetime(2011, 12, 10)
 
+
 # Create a new cltv dataframe with CustomerID, recency_cltv_weekly, T_weekly, frequency and monetary_cltv_avg values.
-cltv_df = pd.DataFrame()
-cltv_df["CustomerID"] = df2["CustomerID"]
 
-cltv_df["recency_cltv_weekly"] = np.NaN
-for i in cltv_df.index:
-    cltv_df["recency_cltv_weekly"][i] = ((max(df2["InvoiceDate"][i]) - min(df2["InvoiceDate"][i])).days) / 7
+cltv_df = df.groupby('Customer ID').agg({'InvoiceDate': [lambda date: (date.max() - date.min()).days,
+                                                     lambda date: (analysis_date - date.min()).days],
+                                     'Invoice': lambda num: num.nunique(),
+                                     'TotalPrice': lambda TotalPrice: TotalPrice.sum()})
 
-cltv_df["T_weekly"] = np.NaN
-for i in cltv_df.index:
-    cltv_df["T_weekly"][i] = ((analysis_date - min(df2["InvoiceDate"][i])).days) / 7
+cltv_df.columns = cltv_df.columns.droplevel(0)
+cltv_df.columns = ['recency_cltv_p', 'T', 'frequency', 'monetary']
 
-cltv_df["frequency"] = np.NaN
-for i in cltv_df.index:
-    cltv_df["frequency"][i] = len(df2["InvoiceNo"][i])
+cltv_df["monetary_cltv_avg"] = cltv_df["monetary"] / rfm["frequency"]
 
-cltv_df["monetary_cltv_avg"] = np.NaN
-for i in cltv_df.index:
-    cltv_df["monetary_cltv_avg"][i] = sum(df2["TotalPrice"][i]) / len(df2["InvoiceNo"][i])
+## recency_weekly_p
+cltv_df["recency_cltv_weekly"] = cltv_df["recency_cltv_p"] / 7 # converted weekly
+cltv_df["T_weekly"] = cltv_df["T"] / 7
 
+# CONTROL
+cltv_df = cltv_df[cltv_df["monetary_cltv_avg"] > 0]
+
+# No correlation between Monetary and Frequency for BG / NBD Model
+cltv_df[['monetary_cltv_avg', 'recency_cltv_weekly']].corr()
+
+# freq > 1
+cltv_df = cltv_df[(cltv_df['frequency'] > 1)]
 cltv_df = cltv_df[(cltv_df['recency_cltv_weekly'] > 0)]
 cltv_df = cltv_df[(cltv_df['T_weekly'] > 0)]
-cltv_df = cltv_df[(cltv_df['frequency'] > 0)]
-cltv_df = cltv_df[(cltv_df['monetary_cltv_avg'] > 0)]
+
 
 cltv_df.head()
 
@@ -231,6 +213,10 @@ bgf.predict(4,
             cltv_df['T_weekly']).sum()
 print(cltv_df.head(5))
 
+# Evaluation of Estimation Results
+plot_period_transactions(bgf)
+plt.show()
+
 # GAMMA-GAMMA Model
 # Expected average profitability.
 # It is done using # frequency and monetary_avg variables.
@@ -247,6 +233,7 @@ cltv_df["exp_average_value"] = ggf.conditional_expected_average_profit(cltv_df['
                                                                        cltv_df['monetary_cltv_avg'])
 
 cltv_df.sort_values("exp_average_value", ascending=False).head()
+cltv_df = cltv_df.reset_index()
 
 # Calculation of CLTV with BG-NBD and GG model
 cltv = ggf.customer_lifetime_value(bgf,
