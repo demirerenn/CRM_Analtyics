@@ -9,8 +9,9 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.float_format', lambda x: '%.3f' % x)
 pd.set_option('display.width', 500)
 
-"""This data set is pulled from UCI Machine Learning Repository, titled "Online Retail II Data Set", donated in 2019. 
-This data set includes an additional year 01/12/2009-09/12/2010 from the data set titled "Online Retail Data Set" donated in 2015.
+"""This Online Retail II data set contains all the transactions occurring for a UK-based and registered, 
+non-store online retail between 01/12/2009 and 09/12/2011.The company mainly sells unique all-occasion gift-ware.
+Many customers of the company are wholesalers.
 http://archive.ics.uci.edu/ml/datasets/Online+Retail+II.
 """
 
