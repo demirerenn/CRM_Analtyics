@@ -9,9 +9,9 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.float_format', lambda x: '%.3f' % x)
 pd.set_option('display.width', 500)
 
-"""This is a transnational data set which contains all the transactions occurring between 01/12/2010 and 09/12/2011 for a UK-based 
-and registered non-store online retail.The company mainly sells unique all-occasion gifts. Many customers of the company are wholesalers. 
-https://www.kaggle.com/datasets/carrie1/ecommerce-data
+"""This data set is pulled from UCI Machine Learning Repository, titled "Online Retail II Data Set", donated in 2019. 
+This data set includes an additional year 01/12/2009-09/12/2010 from the data set titled "Online Retail Data Set" donated in 2015.
+http://archive.ics.uci.edu/ml/datasets/Online+Retail+II.
 """
 
 df_ = pd.read_excel("Exercise/CLTV/online_retail_II.xlsx", sheet_name="Year 2010-2011")
